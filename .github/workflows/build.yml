@@ -2,7 +2,12 @@ name: build
 
 on:
   push:
+    paths-ignore:
+      - "build-log.txt"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -13,30 +18,42 @@ jobs:
       - name: 编译 dylib
         run: |
           set -x
+          set -o pipefail
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           echo "SDK=$SDK"
-          clang --version
           SRC="$GITHUB_WORKSPACE/XHSNotifyTweak-src"
           if [ ! -d "$SRC" ]; then
             SRC=$(dirname "$(find "$GITHUB_WORKSPACE" -maxdepth 3 -name Makefile | head -1)")
           fi
+          echo "SRC=$SRC"
           cd "$SRC"
-          xcrun --sdk iphoneos clang \
-            -arch arm64 \
-            -dynamiclib -fobjc-arc -O2 \
-            -isysroot "$SDK" \
-            -miphoneos-version-min=12.0 \
-            -framework UIKit -framework Foundation -framework AVFoundation \
-            -framework AudioToolbox -framework UserNotifications \
-            -framework QuartzCore -framework CoreGraphics \
-            -install_name @rpath/XHSNotifyTweak.dylib \
-            Hooks.m NYConfig.m NYNotifier.m NYSettings.m \
-            -o XHSNotifyTweak.dylib
-          ls -l XHSNotifyTweak.dylib
+          { xcrun --sdk iphoneos clang \
+              -arch arm64 \
+              -dynamiclib -fobjc-arc -O2 \
+              -isysroot "$SDK" \
+              -miphoneos-version-min=12.0 \
+              -framework UIKit -framework Foundation -framework AVFoundation \
+              -framework AudioToolbox -framework UserNotifications \
+              -framework QuartzCore -framework CoreGraphics \
+              -install_name @rpath/XHSNotifyTweak.dylib \
+              Hooks.m NYConfig.m NYNotifier.m NYSettings.m \
+              -o XHSNotifyTweak.dylib ; } 2>&1 | tee -a "$GITHUB_WORKSPACE/build-log.txt"
 
       - name: 上传 dylib
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: XHSNotifyTweak-dylib
           path: "**/*.dylib"
-          if-no-files-found: error
+          if-no-files-found: ignore
+
+      - name: 把编译日志写回仓库
+        if: always()
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          [ -f build-log.txt ] || echo "没有产生日志" > build-log.txt
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add build-log.txt
+          git commit -m "build log" || true
+          git push || true

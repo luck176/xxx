@@ -12,6 +12,7 @@
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -96,6 +97,67 @@ static unsigned long long NYMsgULL(id msg, NSDictionary *d, NSString *sel, NSArr
         return [v isKindOfClass:NSNumber.class] ? [(NSNumber *)v unsignedLongLongValue] : 0;
     }
     return NYCallULL(msg, sel);
+}
+
+#pragma mark - 自检提示（让"有没有生效"一眼可见）
+
+static UIWindow *NYKeyWindow(void) {
+    UIWindow *win = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *s in [UIApplication sharedApplication].connectedScenes) {
+            if (![s isKindOfClass:UIWindowScene.class]) continue;
+            for (UIWindow *w in ((UIWindowScene *)s).windows) {
+                if (w.isKeyWindow) { win = w; break; }
+            }
+            if (win) break;
+        }
+    }
+    if (!win) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        win = [UIApplication sharedApplication].keyWindow;
+#pragma clang diagnostic pop
+    }
+    if (!win) {
+        NSArray *ws = [UIApplication sharedApplication].windows;
+        if (ws.count) win = ws.firstObject;
+    }
+    return win;
+}
+
+static void NYShowToast(NSString *msg) {
+    if (!msg.length) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *win = NYKeyWindow();
+        if (!win) return;
+        UILabel *l = [[UILabel alloc] initWithFrame:CGRectZero];
+        l.text = msg;
+        l.font = [UIFont boldSystemFontOfSize:13];
+        l.textColor = [UIColor whiteColor];
+        l.textAlignment = NSTextAlignmentCenter;
+        l.numberOfLines = 0;
+        l.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.85];
+        l.layer.cornerRadius = 10.0;
+        l.layer.masksToBounds = YES;
+        [l sizeToFit];
+        CGRect f = l.frame;
+        f.size.width += 26;
+        f.size.height += 14;
+        f.origin.x = (win.bounds.size.width - f.size.width) / 2.0;
+        f.origin.y = 90;
+        l.frame = f;
+        l.alpha = 0.0;
+        [win addSubview:l];
+        [UIView animateWithDuration:0.2 animations:^{
+            l.alpha = 1.0;
+        } completion:^(BOOL finished) {
+            [UIView animateWithDuration:0.35 delay:2.6 options:0 animations:^{
+                l.alpha = 0.0;
+            } completion:^(BOOL f2) {
+                [l removeFromSuperview];
+            }];
+        }];
+    });
 }
 
 #pragma mark - 发送人信息
@@ -256,29 +318,57 @@ static void NYHandleMessage(id msg) {
     [[NYNotifier shared] notifyWithName:name content:content key:key];
 }
 
-static void NYHandleMessageArray(id arr) {
-    if (!arr) return;
-    if ([arr isKindOfClass:NSArray.class]) {
-        for (id m in (NSArray *)arr) NYHandleMessage(m);
-    } else if ([arr isKindOfClass:NSSet.class]) {
-        for (id m in [(NSSet *)arr allObjects]) NYHandleMessage(m);
-    } else if ([arr isKindOfClass:NSDictionary.class]) {
-        NYHandleMessage(arr);
+// 通用递归：不管消息被包在事件里、模型里还是数组里，都往下捞一遍
+static BOOL NYHasSel(id obj, NSString *sel) {
+    return obj && [obj respondsToSelector:NSSelectorFromString(sel)];
+}
+
+static void NYHandleAny(id obj, int depth) {
+    if (!obj || depth > 3) return;
+    if ([obj isKindOfClass:NSArray.class]) {
+        for (id x in (NSArray *)obj) NYHandleAny(x, depth + 1);
+        return;
+    }
+    if ([obj isKindOfClass:NSSet.class]) {
+        for (id x in [(NSSet *)obj allObjects]) NYHandleAny(x, depth + 1);
+        return;
+    }
+    if ([obj isKindOfClass:NSDictionary.class]) {
+        NYHandleMessage(obj);
+        return;
+    }
+    if ([obj isKindOfClass:NSData.class]) return;   // 原始二进制，不解析
+
+    for (NSString *sel in @[ @"messages", @"commonMessages", @"genericEvent",
+                             @"IMEvent", @"pushOneMsg", @"chatOneMsg", @"message" ]) {
+        if (!NYHasSel(obj, sel)) continue;
+        id v = NYCallId(obj, sel);
+        if (!v || v == obj) continue;
+        if ([v isKindOfClass:NSArray.class] || [v isKindOfClass:NSSet.class] ||
+            [v respondsToSelector:@selector(countByEnumeratingWithState:objects:count:)]) {
+            NYHandleAny(v, depth + 1);
+        } else if ([v isKindOfClass:NSDictionary.class]) {
+            NYHandleAny(v, depth + 1);
+        } else if (NYHasSel(v, @"content") || NYHasSel(v, @"uuid")) {
+            NYHandleAny(v, depth + 1);
+        }
+    }
+
+    if (NYHasSel(obj, @"content") && (NYHasSel(obj, @"uuid") || NYHasSel(obj, @"cid"))) {
+        NYHandleMessage(obj);
     }
 }
 
+static void NYHandleMessageArray(id arr) {
+    NYHandleAny(arr, 0);
+}
+
 static void NYHandleGenericEvent(id ev) {
-    if (!ev) return;
-    id msgs = NYCallId(ev, @"messages");
-    if (msgs) NYHandleMessageArray(msgs);
-    id common = NYCallId(ev, @"commonMessages");
-    if (common) NYHandleMessageArray(common);
+    NYHandleAny(ev, 0);
 }
 
 static void NYHandleResponseModel(id model) {
-    if (!model) return;
-    id gen = NYCallId(model, @"genericEvent");
-    if (gen) NYHandleGenericEvent(gen);
+    NYHandleAny(model, 0);
 }
 
 #pragma mark - 安装 hook
@@ -300,82 +390,112 @@ static NYObjImp gOrigMessageFormIm = NULL;
 static NYVoidImp gOrigSetGenericEvent = NULL;
 static NYVoidImp gOrigSetMessages = NULL;
 static NYVoidImp gOrigDidReadIMData = NULL;
+static NYVoidImp gOrigSetIMEvent = NULL;
+static NYVoidImp gOrigSetPushOneMsg = NULL;
+static NYVoidImp gOrigSetChatOneMsg = NULL;
+static NYVoidImp gOrigSetCommonMessages = NULL;
+static NYVoidImp gOrigDidReadPushData = NULL;
+static NYVoidImp gOrigDidReadSignalData = NULL;
+
+static int gHookInstalled = 0;   // 成功挂上多少个方法
+static int gHookHits = 0;        // 运行时被调用的次数
+static BOOL gHitToastShown = NO;
+
+static void NYNoteHit(NSString *hook, id payload) {
+    gHookHits++;
+    if (!gHitToastShown) {
+        gHitToastShown = YES;
+        NYShowToast([NSString stringWithFormat:@"已捕捉到数据：%@", hook]);
+    }
+    [[NYConfig shared] log:@"命中 %@ 累计=%d type=%@", hook, gHookHits, NSStringFromClass([payload class])];
+    @try {
+        NYHandleAny(payload, 0);
+    } @catch (NSException *e) {
+        [[NYConfig shared] log:@"%@ 处理异常: %@", hook, e];
+    }
+}
 
 static id ny_messageFormIm(id self, SEL _cmd, id data) {
     id ret = gOrigMessageFormIm ? gOrigMessageFormIm(self, _cmd, data) : nil;
-    @try {
-        NYHandleResponseModel(ret);
-    } @catch (NSException *e) {
-        [[NYConfig shared] log:@"messageFormIm 处理异常: %@", e];
-    }
+    NYNoteHit(@"messageFormIm", ret);
     return ret;
 }
 
 static void ny_setGenericEvent(id self, SEL _cmd, id arg) {
     if (gOrigSetGenericEvent) gOrigSetGenericEvent(self, _cmd, arg);
-    @try {
-        NYHandleGenericEvent(arg);
-    } @catch (NSException *e) {
-        [[NYConfig shared] log:@"setGenericEvent 处理异常: %@", e];
-    }
+    NYNoteHit(@"setGenericEvent", arg);
+}
+
+static void ny_setIMEvent(id self, SEL _cmd, id arg) {
+    if (gOrigSetIMEvent) gOrigSetIMEvent(self, _cmd, arg);
+    NYNoteHit(@"setIMEvent", arg);
+}
+
+static void ny_setPushOneMsg(id self, SEL _cmd, id arg) {
+    if (gOrigSetPushOneMsg) gOrigSetPushOneMsg(self, _cmd, arg);
+    NYNoteHit(@"setPushOneMsg", arg);
+}
+
+static void ny_setChatOneMsg(id self, SEL _cmd, id arg) {
+    if (gOrigSetChatOneMsg) gOrigSetChatOneMsg(self, _cmd, arg);
+    NYNoteHit(@"setChatOneMsg", arg);
 }
 
 static void ny_setMessages(id self, SEL _cmd, id arg) {
     if (gOrigSetMessages) gOrigSetMessages(self, _cmd, arg);
-    @try {
-        NYHandleMessageArray(arg);
-    } @catch (NSException *e) {
-        [[NYConfig shared] log:@"setMessages 处理异常: %@", e];
-    }
+    NYNoteHit(@"setMessages", arg);
+}
+
+static void ny_setCommonMessages(id self, SEL _cmd, id arg) {
+    if (gOrigSetCommonMessages) gOrigSetCommonMessages(self, _cmd, arg);
+    NYNoteHit(@"setCommonMessages", arg);
 }
 
 static void ny_didReadIMData(id self, SEL _cmd, id data) {
     if (gOrigDidReadIMData) gOrigDidReadIMData(self, _cmd, data);
-    NYConfig *cfg = [NYConfig shared];
-    if ([cfg boolForPath:@"debug.enabled" default:NO]) {
-        NSUInteger len = 0;
-        if ([data respondsToSelector:@selector(length)]) {
-            len = [(NSData *)data length];
-        }
-        [cfg log:@"didReadIMData %lu bytes", (unsigned long)len];
-    }
+    NYNoteHit(@"didReadIMData", data);
+}
+
+static void ny_didReadPushData(id self, SEL _cmd, id data) {
+    if (gOrigDidReadPushData) gOrigDidReadPushData(self, _cmd, data);
+    NYNoteHit(@"didReadPushData", data);
+}
+
+static void ny_didReadSignalData(id self, SEL _cmd, id data) {
+    if (gOrigDidReadSignalData) gOrigDidReadSignalData(self, _cmd, data);
+    NYNoteHit(@"didReadSignalData", data);
 }
 
 static BOOL gInstalled = NO;
-static BOOL gSwzMessageFormIm = NO;
-static BOOL gSwzSetGenericEvent = NO;
-static BOOL gSwzSetMessages = NO;
-static BOOL gSwzDidReadIMData = NO;
+
+#define NYHOOK(clsName, selName, fn, origVar) \
+    if (!(origVar) && NYSwizzle(NSClassFromString(clsName), selName, (IMP)(fn), (IMP *)&(origVar))) \
+        gHookInstalled++;
 
 static void NYInstallHooks(void) {
     if (gInstalled) return;
 
-    Class socketMgr = NSClassFromString(@"XYSocketManager");
-    Class respModel = NSClassFromString(@"XYSKResponseModel");
-    Class genEvent  = NSClassFromString(@"XYSKGenericEvent");
+    NYHOOK(@"XYSocketManager",  @"messageFormIm:",        ny_messageFormIm,     gOrigMessageFormIm)
+    NYHOOK(@"XYSocketManager",  @"didReadIMData:",        ny_didReadIMData,     gOrigDidReadIMData)
+    NYHOOK(@"XYSocketManager",  @"didReadPushData:",      ny_didReadPushData,   gOrigDidReadPushData)
+    NYHOOK(@"XYSocketManager",  @"didReadSignalData:",    ny_didReadSignalData, gOrigDidReadSignalData)
+    NYHOOK(@"XYSKResponseModel", @"setGenericEvent:",     ny_setGenericEvent,   gOrigSetGenericEvent)
+    NYHOOK(@"XYSKResponseModel", @"setIMEvent:",          ny_setIMEvent,        gOrigSetIMEvent)
+    NYHOOK(@"XYSKResponseModel", @"setPushOneMsg:",       ny_setPushOneMsg,     gOrigSetPushOneMsg)
+    NYHOOK(@"XYSKResponseModel", @"setChatOneMsg:",       ny_setChatOneMsg,     gOrigSetChatOneMsg)
+    NYHOOK(@"XYSKGenericEvent",  @"setMessages:",         ny_setMessages,       gOrigSetMessages)
+    NYHOOK(@"XYSKGenericEvent",  @"setCommonMessages:",   ny_setCommonMessages, gOrigSetCommonMessages)
 
-    // 每个方法只替换一次，避免重复 swizzle 造成自我递归
-    if (!gSwzMessageFormIm &&
-        NYSwizzle(socketMgr, @"messageFormIm:", (IMP)ny_messageFormIm, (IMP *)&gOrigMessageFormIm)) {
-        gSwzMessageFormIm = YES;
-    }
-    if (!gSwzSetGenericEvent &&
-        NYSwizzle(respModel, @"setGenericEvent:", (IMP)ny_setGenericEvent, (IMP *)&gOrigSetGenericEvent)) {
-        gSwzSetGenericEvent = YES;
-    }
-    if (!gSwzSetMessages &&
-        NYSwizzle(genEvent, @"setMessages:", (IMP)ny_setMessages, (IMP *)&gOrigSetMessages)) {
-        gSwzSetMessages = YES;
-    }
-    if (!gSwzDidReadIMData &&
-        NYSwizzle(socketMgr, @"didReadIMData:", (IMP)ny_didReadIMData, (IMP *)&gOrigDidReadIMData)) {
-        gSwzDidReadIMData = YES;
-    }
+    [[NYConfig shared] log:@"hook 安装成功 %d 个：mfi=%d ge=%d ime=%d push=%d chat=%d msgs=%d common=%d raw=%d",
+     gHookInstalled, !!gOrigMessageFormIm, !!gOrigSetGenericEvent, !!gOrigSetIMEvent,
+     !!gOrigSetPushOneMsg, !!gOrigSetChatOneMsg, !!gOrigSetMessages, !!gOrigSetCommonMessages,
+     !!gOrigDidReadIMData];
 
-    [[NYConfig shared] log:@"hook 安装 messageFormIm=%d setGenericEvent=%d setMessages=%d didReadIMData=%d",
-     gSwzMessageFormIm, gSwzSetGenericEvent, gSwzSetMessages, gSwzDidReadIMData];
-
-    if (gSwzMessageFormIm || gSwzSetGenericEvent || gSwzSetMessages) gInstalled = YES;  // 主链路成功即停
+    // 少挂一两个没关系（有的版本没有对应 setter），关键链路挂上就停手
+    if (gOrigMessageFormIm || gOrigSetGenericEvent || gOrigSetMessages ||
+        gOrigSetPushOneMsg || gOrigSetChatOneMsg || gOrigSetIMEvent) {
+        gInstalled = YES;
+    }
 }
 
 #pragma mark - 设置入口（三指双击屏幕）
@@ -448,4 +568,11 @@ __attribute__((constructor)) static void NYTweakEntry(void) {
         [[NYConfig shared] reload];       // 回到前台重新读一次配置，手改 JSON 也能即时生效
         NYInstallSettingsGesture();
     }];
+
+    // 启动自检：能弹出来就说明 dylib 真的被加载了，数字就是成功挂上的方法数
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        NYShowToast([NSString stringWithFormat:@"XHSNotify 已加载 · 钩子 %d 个 · 命中 %d 次",
+                     gHookInstalled, gHookHits]);
+    });
 }

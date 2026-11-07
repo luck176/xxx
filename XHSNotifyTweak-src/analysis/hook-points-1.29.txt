@@ -1,0 +1,316 @@
+小红书私信通 1.29 (com.xingin.messagepro) 相关类结构
+由 MessagePro 主二进制 __objc_classlist / __objc_const 离线解析得到
+======================================================================
+
+@interface XYSocketManager : None
+  - initSocket
+  - connect
+  - subscribeNetworkAndAppStatusIfNeed
+  - reconnect
+  - disconnect
+  - destroyConnect
+  - connectToPushService
+  - connectToIMService
+  - showLogInfo
+  - service_ts
+  - fetchSocketIPList
+  - manualPingPong
+  - reachabilityNetwork:didChangeStatus:
+  - didReadPushData:
+  - didReadEmptyData:
+  - didReadIMData:
+  - didReadIMData:shortLink:
+  - didReadIMDataForShortLink:
+  - sendIMMessageWithObject:
+  - didReadSignalData:
+  - netCore:didReceiveRenoResp:
+  - sendPBLogInfo:tag:
+  - sendLogInfo:
+  - onTerminate
+  - onEnterForeground
+  - pushConfig
+  - IMConfig
+  - heartbeat
+  - reconnet
+  - IMHelper
+  - isConnected
+  - logsBuffer
+  - onLogin:
+  - netCore:longlinkStatusChange:
+  - netCoreDidConnect:
+  - netCoreDidLogin:
+  - netCore:didDisconnectWithError:
+  - netCore:didWriteDataWithTag:
+  - netCore:didReadIMData:
+  - netCore:didReadPushData:
+  - netCore:didReadSignalData:
+  - netCore:didReadRoomData:
+  - netCoreOnKickOut:
+  - reportNetCoreProfile:
+  - reportLog:
+  - sendRenoReqWithRequest:respBlock:
+  - sendRoomMessageWithRoomId:roomType:command:customData:respBlock:
+  - sendRoomMessageWithRoomId:roomType:command:receiverId:priority:role:customData:respBlock:
+  - didReadRoomData:
+  - sendCommMessageWithBuzTag:customData:respBlock:
+  - sendGenericMessage:respBlock:
+  - sendVirtualLinkWithSceneId:sceneUserId:linkType:respBlock:
+  - sendGenericCommonData:retryCount:timeout:sceneId:sceneUserId:context:preSendBlock:respBlock:
+  - setGenericBizId:
+  - messageFormIm:
+  - isGzippedData:
+  - checkConnetCanSend
+  - config
+  - setConfig:
+  - fetchUser
+  - setFetchUser:
+  - networkReachable
+  - setNetworkReachable:
+  - state
+  - setState:
+  - isConnecting
+  - setIsConnecting:
+  - setHeartbeat:
+  - setReconnet:
+  - currentHeader
+  - setCurrentHeader:
+  - needPushService
+  - setNeedPushService:
+  - setPushConfig:
+  - needIMService
+  - setNeedIMService:
+  - setIMConfig:
+  - setIMHelper:
+  - curruntLogInfo
+  - setCurruntLogInfo:
+  - setLogsBuffer:
+  - serviceTsDiff
+  - setServiceTsDiff:
+  - connectProfile
+  - setConnectProfile:
+  - writingNum
+  - setWritingNum:
+  - writeStartTime
+  - setWriteStartTime:
+  - startConnectTime
+  - setStartConnectTime:
+  - ncConnected
+  - setNcConnected:
+  - APMTrack
+  - setAPMTrack:
+  - .cxx_destruct
+@end
+
+@interface XYSKResponseModel : None
+  - serverID
+  - setServerID:
+  - answerMode
+  - setAnswerMode:
+  - pushOneMsg
+  - setPushOneMsg:
+  - chatOneMsg
+  - setChatOneMsg:
+  - baseOneMsg
+  - setBaseOneMsg:
+  - pushErrorCode
+  - setPushErrorCode:
+  - IMErrorCode
+  - setIMErrorCode:
+  - pushEvent
+  - setPushEvent:
+  - IMEvent
+  - setIMEvent:
+  - roomEvent
+  - setRoomEvent:
+  - errorInfo
+  - setErrorInfo:
+  - genericEvent
+  - setGenericEvent:
+  - .cxx_destruct
+@end
+
+@interface XYSKGenericEvent : QTJsonEvent
+  - eventType
+  - setEventType:
+  - messages
+  - setMessages:
+  - commonMessages
+  - setCommonMessages:
+  - preData
+  - setPreData:
+  - .cxx_destruct
+@end
+
+@interface XYSKGenericMessage : None
+  - getChatOneMessageData
+  - cid
+  - setCid:
+  - convType
+  - setConvType:
+  - uuid
+  - setUuid:
+  - receiversArray
+  - setReceiversArray:
+  - createAt
+  - setCreateAt:
+  - contentType
+  - setContentType:
+  - content
+  - setContent:
+  - convCreateIsSelfVisible
+  - setConvCreateIsSelfVisible:
+  - extension
+  - setExtension:
+  - callbackCtx
+  - setCallbackCtx:
+  - convRedPointIsNotSelfClear
+  - setConvRedPointIsNotSelfClear:
+  - .cxx_destruct
+@end
+
+@interface XYSKIMMessage : None
+  - messageID
+  - setMessageID:
+  - timestamp
+  - setTimestamp:
+  - senderID
+  - setSenderID:
+  - receiverID
+  - setReceiverID:
+  - content
+  - setContent:
+  - contentType
+  - setContentType:
+  - nickname
+  - setNickname:
+  - command
+  - setCommand:
+  - groupChat
+  - setGroupChat:
+  - refId
+  - setRefId:
+  - triggerSource
+  - setTriggerSource:
+  - .cxx_destruct
+@end
+
+@interface XYSKIMEvent : QTJsonEvent
+  - mid
+  - error
+  - setError:
+  - eventType
+  - setEventType:
+  - chatAck
+  - setChatAck:
+  - .cxx_destruct
+@end
+
+@interface XYSKIMHelper : None
+  - checkConnectTimeOut:timeoutHandler:
+  - connectSuccess
+  - connectDiscard
+  - checkMessageTimeOutWithMessageID:timeoutHandler:
+  - recieveMessageWithMessageID:
+  - taskIDs
+  - setTaskIDs:
+  - .cxx_destruct
+@end
+
+@interface XYSKConfig : None
+  - init
+  - heartbeatTimeInterval
+  - sessionID
+  - userID
+  - deviceID
+  - appID
+  - getSocketIPList
+  - currentHost
+  - setSessionID:
+  - setDeviceID:
+  - setUserID:
+  - setAppID:
+  - isOutOfChina
+  - setIsOutOfChina:
+  - setHeartbeatTimeInterval:
+  - pingTimeout
+  - setPingTimeout:
+  - connectTimeout
+  - setConnectTimeout:
+  - isDebugMode
+  - setIsDebugMode:
+  - needShowDebugLogInfo
+  - setNeedShowDebugLogInfo:
+  - host
+  - setHost:
+  - port
+  - setPort:
+  - ipList
+  - setIpList:
+  - cutomerHeader
+  - setCutomerHeader:
+  - queryItems
+  - setQueryItems:
+  - chost
+  - setChost:
+  - ohost
+  - setOhost:
+  - recordhost
+  - setRecordhost:
+  - bizChannels
+  - setBizChannels:
+  - .cxx_destruct
+@end
+
+@interface XYSKPushConfig : None
+  - isConnected
+  - pingMid
+  - setPingMid:
+  - pushId
+  - setPushId:
+  - token
+  - setToken:
+  - .cxx_destruct
+@end
+
+@interface XYNCSocket : None
+  - openMarsLog
+  - connect
+  - connectWithHost:port:
+  - connectWithHost:port:iplist:
+  - login
+  - loginWithConfig:
+  - logout
+  - sendText:toUser:
+  - getToken
+  - getCipherType
+  - getSecretKey
+  - onCipher
+  - setRoomAckIgnored:
+  - setCommonAuth:
+  - socketAuthWithConfig:
+  - setCallBack
+  - createMars
+  - setClientVersion:
+  - setShortLinkDebugIP:port:
+  - setShortLinkPort:
+  - setLongLinkAddress:port:debugIP:
+  - setLongLinkAddress:port:
+  - setLongLinkAdd:port:iplist:
+  - makesureLongLinkConnect
+  - foregroundChanged:
+  - networkChanged
+  - disconnect
+  - setChannelConfigs:
+  - getServerTimestamp
+  - manualPingPong
+  - config
+  - setConfig:
+  - delegate
+  - setDelegate:
+  - lastConnectProfile
+  - setLastConnectProfile:
+  - lastCPTimeStamp
+  - setLastCPTimeStamp:
+  - .cxx_destruct
+@end
+

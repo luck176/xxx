@@ -1,0 +1,47 @@
+{
+  "enabled": true,
+  "style": "banner",
+  "sound": {
+    "enabled": true,
+    "mode": "system",
+    "file": "",
+    "systemSoundID": 1007,
+    "volume": 1,
+    "vibrate": true,
+    "ignoreMute": false,
+    "speak": false,
+    "speakPrefix": "新私信，",
+    "speakMaxLength": 40
+  },
+  "banner": {
+    "duration": 4,
+    "titleTemplate": "{name}",
+    "bodyTemplate": "{content}",
+    "subtitleTemplate": "私信通 · {time}",
+    "maxBodyLength": 120,
+    "showSettingsButton": true
+  },
+  "alert": {
+    "titleTemplate": "新私信",
+    "bodyTemplate": "{name}：{content}"
+  },
+  "notify": {
+    "localEnabled": true,
+    "titleTemplate": "新私信 · {name}",
+    "bodyTemplate": "{content}"
+  },
+  "filter": {
+    "minInterval": 1,
+    "ignoreSelf": true,
+    "selfUserID": "",
+    "blacklist": [],
+    "whitelist": [],
+    "ignoreEmptyContent": true,
+    "maxAgeSeconds": 180,
+    "skipConvTypes": []
+  },
+  "debug": {
+    "enabled": false,
+    "logPath": ""
+  }
+}

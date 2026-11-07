@@ -1,0 +1,8 @@
+Architecture: iphoneos-arm
+Name: XHSNotifyTweak（小红书私信通 私信提醒）
+Description: 收到私信时播放提示音并弹出横幅/弹窗，音效与文案可自定义
+Maintainer: 你
+Author: 你
+Section: Tweaks
+Depends: firmware (>= 12.0), mobilesubstrate
+Version: 1.0.0

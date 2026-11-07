@@ -1,0 +1,43 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Theos
+        run: |
+          export THEOS="$HOME/theos"
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+          echo "THEOS=$THEOS" >> "$GITHUB_ENV"
+
+      - name: 选择 Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | head -1)" || true
+          xcodebuild -version || true
+
+      - name: 定位工程目录
+        run: |
+          PROJ="$(dirname "$(find . -maxdepth 3 -name Makefile | head -1)")"
+          echo "找到工程目录: $PROJ"
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+
+      - name: 编译
+        run: |
+          make -C "$PROJ" clean || true
+          make -C "$PROJ" FINALPACKAGE=1
+
+      - name: 查看产物
+        run: find . -name "*.dylib" -print
+
+      - name: 上传 dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: XHSNotifyTweak-dylib
+          path: "**/*.dylib"
+          if-no-files-found: error

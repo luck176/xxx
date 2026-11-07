@@ -74,8 +74,9 @@
     style.title = @"提醒方式";
     style.hasDisclosure = YES;
     NSString *s = [cfg stringForPath:@"style"] ?: @"banner";
-    style.detail = [@{ @"banner": @"顶部横幅", @"alert": @"系统弹窗",
-                       @"notify": @"仅本地通知", @"none": @"不弹窗" }[s] ?: s];
+    NSDictionary *styleNames = @{ @"banner": @"顶部横幅", @"alert": @"系统弹窗",
+                                  @"notify": @"仅本地通知", @"none": @"不弹窗" };
+    style.detail = styleNames[s] ?: s;
     style.action = ^{
         UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"提醒方式"
                                                                     message:nil
@@ -99,7 +100,8 @@
     soundMode.title = @"音效来源";
     soundMode.hasDisclosure = YES;
     NSString *m = [cfg stringForPath:@"sound.mode"] ?: @"system";
-    soundMode.detail = [@{ @"system": @"系统提示音", @"file": @"自定义音频", @"none": @"关闭" }[m] ?: m];
+    NSDictionary *modeNames = @{ @"system": @"系统提示音", @"file": @"自定义音频", @"none": @"关闭" };
+    soundMode.detail = modeNames[m] ?: m;
     soundMode.action = ^{
         UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"音效来源"
                                                                     message:nil

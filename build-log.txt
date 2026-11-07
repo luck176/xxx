@@ -1,0 +1,27 @@
++ xcrun --sdk iphoneos clang -arch arm64 -dynamiclib -fobjc-arc -O2 -isysroot /Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk -miphoneos-version-min=12.0 -framework UIKit -framework Foundation -framework AVFoundation -framework AudioToolbox -framework UserNotifications -framework QuartzCore -framework CoreGraphics -install_name @rpath/XHSNotifyTweak.dylib Hooks.m NYConfig.m NYNotifier.m NYSettings.m -o XHSNotifyTweak.dylib
+NYNotifier.m:494:5: warning: 'UIWindowScene' is only available on iOS 13.0 or newer [-Wunguarded-availability-new]
+  494 |     UIWindowScene *scene = nil;
+      |     ^~~~~~~~~~~~~
+/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIWindowScene.h:21:12: note: 'UIWindowScene' has been marked as being introduced in iOS 13.0 here, but the deployment target is iOS 12.0.0
+   21 | @interface UIWindowScene : UIScene
+      |            ^
+NYNotifier.m:494:5: note: enclose 'UIWindowScene' in an @available check to silence this warning
+  494 |     UIWindowScene *scene = nil;
+      |     ^~~~~~~~~~~~~              
+NYNotifier.m:505:33: warning: 'initWithWindowScene:' is only available on iOS 13.0 or newer [-Wunguarded-availability-new]
+  505 |         win = [[NYWindow alloc] initWithWindowScene:scene];
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~
+/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIWindow.h:25:1: note: 'initWithWindowScene:' has been marked as being introduced in iOS 13.0 here, but the deployment target is iOS 12.0.0
+   25 | - (instancetype)initWithWindowScene:(UIWindowScene *)windowScene NS_DESIGNATED_INITIALIZER API_AVAILABLE(ios(13.0)) API_UNAVAILABLE(watchos);
+      | ^
+NYNotifier.m:505:33: note: enclose 'initWithWindowScene:' in an @available check to silence this warning
+  505 |         win = [[NYWindow alloc] initWithWindowScene:scene];
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~ 
+2 warnings generated.
+NYSettings.m:78:86: error: expected identifier
+   78 |                        @"notify": @"仅本地通知", @"none": @"不弹窗" }[s] ?: s];
+      |                                                                              ^
+NYSettings.m:102:116: error: expected identifier
+  102 |     soundMode.detail = [@{ @"system": @"系统提示音", @"file": @"自定义音频", @"none": @"关闭" }[m] ?: m];
+      |                                                                                                        ^
+2 errors generated.

@@ -13,6 +13,7 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#include <string.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -371,6 +372,198 @@ static void NYHandleResponseModel(id model) {
     NYHandleAny(model, 0);
 }
 
+#pragma mark - 诊断（HUD + 类族撒网）
+
+static UILabel *gHUDLabel = nil;
+static int gDiagHits = 0;
+static NSMutableArray *gDiagRecent = nil;
+
+static void NYDiagRefresh(void) {
+    static NSTimeInterval last = 0;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (now - last < 0.3) return;      // 节流，避免高频方法把 UI 拖死
+    last = now;
+
+    NSString *txt = [NSString stringWithFormat:@"XHSNotify 命中 %d\n%@",
+                     gDiagHits,
+                     (gDiagRecent.count ? [gDiagRecent componentsJoinedByString:@" / "] : @"（还没捕捉到）")];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!gHUDLabel) {
+            UIWindow *win = NYKeyWindow();
+            if (!win) return;
+            UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, win.bounds.size.height - 56,
+                                                                   win.bounds.size.width, 56)];
+            l.numberOfLines = 2;
+            l.font = [UIFont systemFontOfSize:10];
+            l.textColor = [UIColor whiteColor];
+            l.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.78];
+            l.textAlignment = NSTextAlignmentLeft;
+            l.userInteractionEnabled = NO;
+            l.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleTopMargin;
+            [win addSubview:l];
+            gHUDLabel = l;
+        }
+        gHUDLabel.text = txt;
+    });
+}
+
+static void NYDiagHit(NSString *where, id payload) {
+    gDiagHits++;
+    if (!gDiagRecent) gDiagRecent = [NSMutableArray array];
+    if (where.length && ![gDiagRecent containsObject:where]) {
+        [gDiagRecent insertObject:where atIndex:0];
+        while (gDiagRecent.count > 3) [gDiagRecent removeLastObject];
+    }
+    NYDiagRefresh();
+    @try {
+        NYHandleAny(payload, 0);
+    } @catch (NSException *e) {
+    }
+}
+
+typedef struct {
+    __unsafe_unretained Class cls;
+    SEL sel;
+    IMP orig;
+} NYSprayEntry;
+
+static NYSprayEntry gSprayMap[600];
+static int gSprayCount = 0;
+static BOOL gSprayDone = NO;
+
+static NYSprayEntry *NYSprayFind(id self, SEL cmd) {
+    Class c = object_getClass(self);
+    for (int i = gSprayCount - 1; i >= 0; i--) {
+        if (gSprayMap[i].sel == cmd && gSprayMap[i].cls == c) return &gSprayMap[i];
+    }
+    for (int i = gSprayCount - 1; i >= 0; i--) {
+        if (gSprayMap[i].sel == cmd) return &gSprayMap[i];
+    }
+    return NULL;
+}
+
+static void ny_spray_void1(id self, SEL _cmd, id arg) {
+    NYSprayEntry *e = NYSprayFind(self, _cmd);
+    if (e && e->orig) ((void (*)(id, SEL, id))e->orig)(self, _cmd, arg);
+    NYDiagHit([NSString stringWithFormat:@"%@.%@", NSStringFromClass(object_getClass(self)), NSStringFromSelector(_cmd)], arg);
+}
+
+static id ny_spray_obj1(id self, SEL _cmd, id arg) {
+    NYSprayEntry *e = NYSprayFind(self, _cmd);
+    id ret = nil;
+    if (e && e->orig) ret = ((id (*)(id, SEL, id))e->orig)(self, _cmd, arg);
+    NYDiagHit([NSString stringWithFormat:@"%@.%@", NSStringFromClass(object_getClass(self)), NSStringFromSelector(_cmd)],
+              ret ?: arg);
+    return ret;
+}
+
+static BOOL NYIsTargetClass(const char *name) {
+    if (!name) return NO;
+    if (strncmp(name, "XYSK", 4) == 0) return YES;
+    if (strncmp(name, "XYSocket", 8) == 0) return YES;
+    if (strncmp(name, "XYNC", 4) == 0) return YES;
+    if (strncmp(name, "XYNCSocket", 10) == 0) return YES;
+    return NO;
+}
+
+static BOOL NYIsAlreadyHooked(NSString *sel) {
+    static NSArray *list = nil;
+    if (!list) {
+        list = @[ @"messageFormIm:", @"didReadIMData:", @"didReadPushData:", @"didReadSignalData:",
+                  @"setGenericEvent:", @"setIMEvent:", @"setPushOneMsg:", @"setChatOneMsg:",
+                  @"setMessages:", @"setCommonMessages:" ];
+    }
+    return [list containsObject:sel];
+}
+
+static int NYSprayInstall(void) {
+    if (gSprayDone) return gSprayCount;
+    gSprayDone = YES;
+
+    int total = objc_getClassList(NULL, 0);
+    if (total <= 0) return 0;
+    Class *classes = (Class *)malloc(sizeof(Class) * (size_t)total);
+    if (!classes) return 0;
+    total = objc_getClassList(classes, total);
+
+    for (int i = 0; i < total; i++) {
+        Class cls = classes[i];
+        if (class_isMetaClass(cls)) continue;
+        const char *cname = class_getName(cls);
+        if (!NYIsTargetClass(cname)) continue;
+
+        unsigned int mcount = 0;
+        Method *methods = class_copyMethodList(cls, &mcount);
+        if (!methods) continue;
+        for (unsigned int j = 0; j < mcount && gSprayCount < 600; j++) {
+            Method m = methods[j];
+            const char *enc = method_getTypeEncoding(m);
+            if (!enc) continue;
+            SEL sel = method_getName(m);
+            NSString *sn = NSStringFromSelector(sel);
+            if ([sn isEqualToString:@"dealloc"] || [sn isEqualToString:@"retain"] ||
+                [sn isEqualToString:@"release"] || [sn isEqualToString:@"autorelease"] ||
+                [sn isEqualToString:@"copy"] || [sn isEqualToString:@"zone"] ||
+                NYIsAlreadyHooked(sn)) {
+                continue;
+            }
+            if (strcmp(enc, "v24@0:8@16") == 0) {
+                gSprayMap[gSprayCount].cls = cls;
+                gSprayMap[gSprayCount].sel = sel;
+                gSprayMap[gSprayCount].orig = method_setImplementation(m, (IMP)ny_spray_void1);
+                gSprayCount++;
+            } else if (strcmp(enc, "@24@0:8@16") == 0) {
+                gSprayMap[gSprayCount].cls = cls;
+                gSprayMap[gSprayCount].sel = sel;
+                gSprayMap[gSprayCount].orig = method_setImplementation(m, (IMP)ny_spray_obj1);
+                gSprayCount++;
+            }
+        }
+        free(methods);
+    }
+    free(classes);
+
+    [[NYConfig shared] log:@"撒网完成，共挂上 %d 个方法", gSprayCount];
+    return gSprayCount;
+}
+
+#pragma mark - 通知名监控（App 内部事件）
+
+static IMP gOrigPost2 = NULL;
+static IMP gOrigPost3 = NULL;
+
+static BOOL NYNameInteresting(NSString *n) {
+    if (!n.length) return NO;
+    for (NSString *k in @[ @"msg", @"Msg", @"message", @"Message", @"chat", @"Chat",
+                           @"私信", @"conv", @"Conv", @"unread", @"Unread", @"im" ]) {
+        if ([n rangeOfString:k].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+static void ny_post2(id self, SEL _cmd, NSString *name, id object) {
+    if (gOrigPost2) ((void (*)(id, SEL, id, id))gOrigPost2)(self, _cmd, name, object);
+    if (NYNameInteresting(name)) NYDiagHit([NSString stringWithFormat:@"通知 %@", name], object);
+}
+
+static void ny_post3(id self, SEL _cmd, NSString *name, id object, id info) {
+    if (gOrigPost3) ((void (*)(id, SEL, id, id, id))gOrigPost3)(self, _cmd, name, object, info);
+    if (NYNameInteresting(name)) NYDiagHit([NSString stringWithFormat:@"通知 %@", name], info ?: object);
+}
+
+static void NYInstallNotificationSpy(void) {
+    if (!gOrigPost2) {
+        gOrigPost2 = method_setImplementation(class_getInstanceMethod([NSNotificationCenter class],
+                                            @selector(postNotificationName:object:)),
+                                              (IMP)ny_post2);
+    }
+    if (!gOrigPost3) {
+        gOrigPost3 = method_setImplementation(class_getInstanceMethod([NSNotificationCenter class],
+                                            @selector(postNotificationName:object:userInfo:)),
+                                              (IMP)ny_post3);
+    }
+}
+
 #pragma mark - 安装 hook
 
 typedef id (*NYObjImp)(id, SEL, id);
@@ -403,10 +596,6 @@ static BOOL gHitToastShown = NO;
 
 static void NYNoteHit(NSString *hook, id payload) {
     gHookHits++;
-    if (!gHitToastShown) {
-        gHitToastShown = YES;
-        NYShowToast([NSString stringWithFormat:@"已捕捉到数据：%@", hook]);
-    }
     [[NYConfig shared] log:@"命中 %@ 累计=%d type=%@", hook, gHookHits, NSStringFromClass([payload class])];
     @try {
         NYHandleAny(payload, 0);
@@ -557,6 +746,9 @@ __attribute__((constructor)) static void NYTweakEntry(void) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * i * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             NYInstallHooks();
+            NYSprayInstall();
+            NYInstallNotificationSpy();
+            NYDiagRefresh();
             NYInstallSettingsGesture();
         });
     }
@@ -569,10 +761,10 @@ __attribute__((constructor)) static void NYTweakEntry(void) {
         NYInstallSettingsGesture();
     }];
 
-    // 启动自检：能弹出来就说明 dylib 真的被加载了，数字就是成功挂上的方法数
+    // 启动自检：能弹出来就说明 dylib 真的被加载了
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        NYShowToast([NSString stringWithFormat:@"XHSNotify 已加载 · 钩子 %d 个 · 命中 %d 次",
-                     gHookInstalled, gHookHits]);
+        NYShowToast([NSString stringWithFormat:@"XHSNotify 已加载 · 钩子 %d · 撒网 %d · 命中 %d",
+                     gHookInstalled, gSprayCount, gDiagHits]);
     });
 }
